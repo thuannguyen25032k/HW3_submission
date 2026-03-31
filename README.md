@@ -34,7 +34,7 @@ Each `data/<run>/` folder contains:
 All scripts must be run from the `mini-grp/` directory (or an equivalent copy of it) with the `hw2` conda environment activated.
 
 ```bash
-conda activate hw2
+conda activate roble
 cd mini-grp
 ```
 
