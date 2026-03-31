@@ -1,0 +1,39 @@
+experiment:
+  name: hw3_dense_ppo_seed2
+  project: mini-grp-hw3
+  description: Dense MLP policy trained with PPO on privileged state
+r_seed: 2
+sim:
+  task_set: libero_spatial
+  eval_tasks:
+  - 9
+  eval_episodes: 5
+  episode_length: 300
+  use_fast_env: true
+  reward_scale: 0.1
+training:
+  total_env_steps: 2000000
+  rollout_length: 4096
+  ppo_epochs: 10
+  minibatch_size: 256
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.2
+  value_coeff: 0.5
+  entropy_coeff: 0.001
+  max_grad_norm: 0.5
+  learning_rate: 0.0003
+  normalize_advantages: true
+  normalize_rewards: false
+  anneal_lr: true
+  target_kl: 0
+  value_clip_eps: 10.0
+policy:
+  obs_dim: 13
+  action_dim: 7
+  hidden_dim: 256
+  n_layers: 3
+action_dim: 7
+eval_interval: 5000
+log_interval: 1000
+save_interval: 50000

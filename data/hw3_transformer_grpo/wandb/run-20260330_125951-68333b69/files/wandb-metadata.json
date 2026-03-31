@@ -1,0 +1,53 @@
+{
+  "os": "Linux-6.14.0-37-generic-x86_64-with-glibc2.41",
+  "python": "CPython 3.10.19",
+  "startedAt": "2026-03-30T16:59:51.179784Z",
+  "args": [
+    "experiment.name=hw3_transformer_grpo_seed0",
+    "r_seed=0",
+    "init_checkpoint=checkpoints/grp-ver2/miniGRP.pth",
+    "rl.algorithm=grpo",
+    "sim.task_set=libero_spatial",
+    "sim.eval_tasks=[0]",
+    "sim.reward_scale=0.1",
+    "training.total_env_steps=200000",
+    "grpo.chunk_size=32",
+    "grpo.num_groups=4",
+    "grpo.group_size=8"
+  ],
+  "program": "/home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3/train_transformer_rl.py",
+  "codePath": "hw3/train_transformer_rl.py",
+  "codePathLocal": "train_transformer_rl.py",
+  "git": {
+    "remote": "https://github.com/thuannguyen25032k/robot_learning_2026_TN.git",
+    "commit": "e8d2c2c223cf91b90c7f8b6f877cbc7f340b92f5"
+  },
+  "email": "thuan.nguyen25032k@gmail.com",
+  "root": "/home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3",
+  "host": "necphy-MS-7E34",
+  "executable": "/home/necphy/anaconda3/envs/hw2/bin/python",
+  "cpu_count": 24,
+  "cpu_count_logical": 24,
+  "gpu": "NVIDIA RTX 6000 Ada Generation",
+  "gpu_count": 1,
+  "disk": {
+    "/": {
+      "total": "4030220222464",
+      "used": "3138766311424"
+    }
+  },
+  "memory": {
+    "total": "131990753280"
+  },
+  "gpu_nvidia": [
+    {
+      "name": "NVIDIA RTX 6000 Ada Generation",
+      "memoryTotal": "51527024640",
+      "cudaCores": 18176,
+      "architecture": "Ada",
+      "uuid": "GPU-e367fd88-8b19-082a-6357-080f5aeba177"
+    }
+  ],
+  "cudaVersion": "13.0",
+  "writerId": "jbwq6nn1ksk4rw5zukor9agov2fjaqq2"
+}

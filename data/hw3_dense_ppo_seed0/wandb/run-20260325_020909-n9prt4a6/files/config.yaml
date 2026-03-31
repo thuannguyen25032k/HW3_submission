@@ -1,0 +1,115 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            svjflcg97m5e78wfdmjqqckckxzjrva1:
+                args:
+                    - experiment.name=hw3_dense_ppo_seed0_standard
+                    - r_seed=0
+                    - sim.task_set=libero_spatial
+                    - sim.eval_tasks=[9]
+                    - sim.reward_version=standard
+                    - sim.reward_scale=0.1
+                    - training.total_env_steps=2000000
+                    - training.rollout_length=4096
+                    - training.ppo_epochs=10
+                    - training.minibatch_size=256
+                    - training.learning_rate=3e-4
+                codePath: hw3/train_dense_rl.py
+                codePathLocal: train_dense_rl.py
+                cpu_count: 24
+                cpu_count_logical: 24
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "4030220222464"
+                        used: "3598979891200"
+                email: thuan.nguyen25032k@gmail.com
+                executable: /home/necphy/anaconda3/envs/hw2/bin/python
+                git:
+                    commit: 3f911b81bf35c071be4dc6e10da9666bf1655417
+                    remote: https://github.com/thuannguyen25032k/robot_learning_2026_TN.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-e367fd88-8b19-082a-6357-080f5aeba177
+                host: necphy-MS-7E34
+                memory:
+                    total: "131990753280"
+                os: Linux-6.14.0-37-generic-x86_64-with-glibc2.41
+                program: /home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3/train_dense_rl.py
+                python: CPython 3.10.19
+                root: /home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3
+                startedAt: "2026-03-25T06:09:09.183336Z"
+                writerId: svjflcg97m5e78wfdmjqqckckxzjrva1
+        m: []
+        python_version: 3.10.19
+        t:
+            "1":
+                - 1
+                - 50
+            "2":
+                - 1
+                - 50
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.10.19
+            "5": 0.25.1
+            "12": 0.25.1
+            "13": linux-x86_64
+action_dim:
+    value: 7
+eval_interval:
+    value: 5000
+experiment:
+    value:
+        description: Dense MLP policy trained with PPO on privileged state
+        name: hw3_dense_ppo_seed0_standard
+        project: mini-grp-hw3
+log_interval:
+    value: 1000
+policy:
+    value:
+        action_dim: 7
+        hidden_dim: 256
+        n_layers: 3
+        obs_dim: 13
+r_seed:
+    value: 0
+save_interval:
+    value: 50000
+sim:
+    value:
+        episode_length: 300
+        eval_episodes: 5
+        eval_tasks:
+            - 9
+        reward_scale: 0.1
+        reward_version: standard
+        task_set: libero_spatial
+        use_fast_env: true
+training:
+    value:
+        anneal_lr: true
+        clip_eps: 0.2
+        entropy_coeff: 0.001
+        gae_lambda: 0.95
+        gamma: 0.99
+        learning_rate: 0.0003
+        max_grad_norm: 0.5
+        minibatch_size: 256
+        normalize_advantages: true
+        normalize_rewards: false
+        ppo_epochs: 10
+        rollout_length: 4096
+        target_kl: 0
+        total_env_steps: 2000000
+        value_clip_eps: 10
+        value_coeff: 0.5

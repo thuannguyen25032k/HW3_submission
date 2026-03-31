@@ -1,0 +1,125 @@
+_wandb:
+    value:
+        cli_version: 0.25.1
+        e:
+            jbwq6nn1ksk4rw5zukor9agov2fjaqq2:
+                args:
+                    - experiment.name=hw3_transformer_grpo_seed0
+                    - r_seed=0
+                    - init_checkpoint=checkpoints/grp-ver2/miniGRP.pth
+                    - rl.algorithm=grpo
+                    - sim.task_set=libero_spatial
+                    - sim.eval_tasks=[0]
+                    - sim.reward_scale=0.1
+                    - training.total_env_steps=200000
+                    - grpo.chunk_size=32
+                    - grpo.num_groups=4
+                    - grpo.group_size=8
+                codePath: hw3/train_transformer_rl.py
+                codePathLocal: train_transformer_rl.py
+                cpu_count: 24
+                cpu_count_logical: 24
+                cudaVersion: "13.0"
+                disk:
+                    /:
+                        total: "4030220222464"
+                        used: "3138766311424"
+                email: thuan.nguyen25032k@gmail.com
+                executable: /home/necphy/anaconda3/envs/hw2/bin/python
+                git:
+                    commit: e8d2c2c223cf91b90c7f8b6f877cbc7f340b92f5
+                    remote: https://github.com/thuannguyen25032k/robot_learning_2026_TN.git
+                gpu: NVIDIA RTX 6000 Ada Generation
+                gpu_count: 1
+                gpu_nvidia:
+                    - architecture: Ada
+                      cudaCores: 18176
+                      memoryTotal: "51527024640"
+                      name: NVIDIA RTX 6000 Ada Generation
+                      uuid: GPU-e367fd88-8b19-082a-6357-080f5aeba177
+                host: necphy-MS-7E34
+                memory:
+                    total: "131990753280"
+                os: Linux-6.14.0-37-generic-x86_64-with-glibc2.41
+                program: /home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3/train_transformer_rl.py
+                python: CPython 3.10.19
+                root: /home/necphy/ThuanNguyen/robot_learning_2026_TN/hw3
+                startedAt: "2026-03-30T16:59:51.179784Z"
+                writerId: jbwq6nn1ksk4rw5zukor9agov2fjaqq2
+        m: []
+        python_version: 3.10.19
+        t:
+            "1":
+                - 1
+                - 50
+            "2":
+                - 1
+                - 50
+            "3":
+                - 2
+                - 13
+                - 16
+                - 61
+            "4": 3.10.19
+            "5": 0.25.1
+            "12": 0.25.1
+            "13": linux-x86_64
+eval_interval:
+    value: 5000
+experiment:
+    value:
+        description: Transformer policy fine-tuned from HW1 checkpoint with RL
+        name: hw3_transformer_grpo_seed0
+        project: mini-grp-hw3
+grpo:
+    value:
+        chunk_size: 32
+        group_size: 8
+        kl_coef: 0.04
+        num_groups: 4
+        ref_update_interval: 0
+init_checkpoint:
+    value: checkpoints/grp-ver2/miniGRP.pth
+log_interval:
+    value: 1000
+r_seed:
+    value: 0
+rl:
+    value:
+        algorithm: grpo
+save_interval:
+    value: 50000
+sim:
+    value:
+        episode_length: 200
+        eval_episodes: 5
+        eval_tasks:
+            - 0
+        fast_env_output_image: true
+        reward_scale: 0.1
+        task_set: libero_spatial
+        use_fast_env: true
+training:
+    value:
+        anneal_lr: true
+        clip_eps: 0.1
+        entropy_coeff: 0.001
+        gae_lambda: 0.95
+        gamma: 0.99
+        learning_rate: 3e-05
+        max_grad_norm: 0.5
+        minibatch_size: 256
+        normalize_advantages: true
+        normalize_rewards: false
+        ppo_epochs: 10
+        rollout_length: 2048
+        target_kl: 0.01
+        total_env_steps: 200000
+        value_clip_eps: 10
+        value_coeff: 0.5
+value:
+    value:
+        hidden_dim: 256
+        learning_rate: 0.0003
+        n_layers: 2
+        shared_network: false
