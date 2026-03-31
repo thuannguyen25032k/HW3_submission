@@ -1,0 +1,11 @@
+- experiment.name=hw3_transformer_ppo_seed0
+- r_seed=0
+- init_checkpoint=checkpoints/grp-ver2/miniGRP.pth
+- rl.algorithm=ppo
+- sim.task_set=libero_spatial
+- sim.eval_tasks=[0]
+- sim.reward_scale=0.1
+- training.total_env_steps=200000
+- training.rollout_length=2000
+- training.ppo_epochs=10
+- training.minibatch_size=128
