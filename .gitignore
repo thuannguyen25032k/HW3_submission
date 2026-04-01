@@ -1,3 +1,11 @@
+# Large model / data files — too big for GitHub (>100 MB limit)
+# Use Git LFS or external storage for these.
+data/**/*.pth
+data/**/*.pkl
+data/**/*.h5
+data/**/*.hdf5
+data/**/*.zip
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
