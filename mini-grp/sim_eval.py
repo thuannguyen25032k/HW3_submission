@@ -662,18 +662,18 @@ def eval_libero_fast_transformer(model, device, cfg, iter_=0, log_dir="./",
     total_episodes  = 0
 
     for task_id in cfg.sim.eval_tasks:
-        # FastLIBEROEnv must output images for the transformer
+        # FastLIBEROEnv must output images for the transformer.
+        # Pass image_size and output_image_obs as direct constructor args to avoid
+        # merging keys into a struct-mode OmegaConf config (raises ConfigKeyError).
+        image_size = int(cfg.transformer_policy.fast_env_image_size)
         env = FastLIBEROEnv(
             benchmark_name=task_suite_name,
             task_id=int(task_id),
             max_episode_steps=cfg.sim.episode_length,
             render_mode="rgb_array" if render else None,
-            cfg=OmegaConf.merge(cfg, OmegaConf.create({
-                "sim": {
-                    "fast_env_output_image": True,
-                    "fast_env_image_size": int(cfg.transformer_policy.fast_env_image_size),
-                }
-            })),
+            image_size=image_size,
+            output_image_obs=True,
+            cfg=cfg,
         )
         task        = task_suite.get_task(int(task_id))
         instruction = task.language
