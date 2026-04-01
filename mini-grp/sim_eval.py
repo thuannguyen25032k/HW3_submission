@@ -860,7 +860,41 @@ def my_main(cfg: DictConfig):
 
     elif model_type == "transformer_policy":
         from train_transformer_rl import TransformerPolicyWrapper
-        policy = TransformerPolicyWrapper(checkpoint_path, device, cfg)
+        # TransformerPolicyWrapper expects a raw dill-pickled GRP model (HW1 format).
+        # HW3 fine-tuned checkpoints (PPO/GRPO: key "policy"; DAgger: key "student")
+        # store only a state_dict, so we reconstruct the wrapper from the base model
+        # path stored in the checkpoint's cfg, then load the fine-tuned weights.
+        raw = torch.load(checkpoint_path, map_location=device, pickle_module=dill)
+        if isinstance(raw, dict):
+            ckpt_cfg = raw.get("cfg", {})
+            if "policy" in raw:
+                state_dict = raw["policy"]
+                base_path  = ckpt_cfg.get("init_checkpoint", None)
+                fmt_label  = "PPO/GRPO"
+            elif "student" in raw:
+                state_dict = raw["student"]
+                base_path  = ckpt_cfg.get("student_init_checkpoint", None)
+                fmt_label  = "DAgger"
+            else:
+                raise ValueError(
+                    f"Unrecognised HW3 checkpoint dict in '{checkpoint_path}'. "
+                    "Expected key 'policy' (PPO/GRPO) or 'student' (DAgger)."
+                )
+            if base_path is None:
+                raise ValueError(
+                    f"HW3 {fmt_label} checkpoint '{checkpoint_path}' does not store "
+                    "the base model path in cfg. Cannot reconstruct TransformerPolicyWrapper."
+                )
+            # Resolve relative path (stored relative to hw3/ working dir).
+            if not os.path.isabs(base_path):
+                base_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), base_path)
+            print(f"[sim_eval] {fmt_label} checkpoint detected — loading base model from: {base_path}")
+            policy = TransformerPolicyWrapper(base_path, device, cfg)
+            policy.model.load_state_dict(state_dict)
+            print(f"[sim_eval] Fine-tuned weights loaded from: {checkpoint_path}")
+        else:
+            # HW1 raw dill pickle — pass straight through as before.
+            policy = TransformerPolicyWrapper(checkpoint_path, device, cfg)
         policy.eval()
         print(f"Loaded TransformerPolicyWrapper from {checkpoint_path}")
 
