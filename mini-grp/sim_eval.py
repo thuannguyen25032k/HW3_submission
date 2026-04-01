@@ -439,189 +439,479 @@ def eval_libero(model, device, cfg, iter_=0, log_dir="./",
 
 
 def eval_libero_fast(model, device, cfg, iter_=0, log_dir="./",
-                     tokenizer=None, text_model=None, wandb=None, 
+                     tokenizer=None, text_model=None, wandb=None,
                      render=False):
+    """Evaluate a DensePolicy on FastLIBEROEnv.
+
+    Uses ``info["state_obs"]`` (the privileged state vector) as input,
+    matching exactly how DensePolicy was trained in ``train_dense_rl.py``.
+    One action is produced per step via ``model.get_action(obs_t, deterministic=True)``.
+
+    Args:
+        model:   DensePolicy instance (already on ``device``, in eval() mode).
+        device:  torch.device.
+        cfg:     Hydra DictConfig.  Uses ``sim.*`` keys.
+        iter_:   Iteration index used for video file naming.
+        log_dir: Directory to save mp4 videos.
+        render:  Whether to save a video for each episode.
+        wandb:   Optional wandb run handle for logging.
+
+    Returns:
+        dict with keys: rewards, success_rate, traj, video_url.
+    """
     from libero.libero import benchmark
     from libero_env_fast import FastLIBEROEnv
     import os
     import imageio
 
-    benchmark_dict = benchmark.get_benchmark_dict()
+    benchmark_dict  = benchmark.get_benchmark_dict()
     task_suite_name = cfg.sim.task_set
-    task_suite = benchmark_dict[task_suite_name]()
+    task_suite      = benchmark_dict[task_suite_name]()
+
     trajectory_data = []
     last_video_path = None
-    tasks = [cfg.sim.eval_tasks[0] for _ in range(10)]
-    successful_tasks = 0
-    for task_id in tasks:
+    total_successes = 0
+    total_episodes  = 0
+
+    for task_id in cfg.sim.eval_tasks:
         env = FastLIBEROEnv(
             benchmark_name=task_suite_name,
-            task_id=task_id,
+            task_id=int(task_id),
             max_episode_steps=cfg.sim.episode_length,
-            render_mode='rgb_array' if render else None,
-            num_sim_steps=1,
+            render_mode="rgb_array" if render else None,
             cfg=cfg,
         )
-        task = task_suite.get_task(task_id)
+        task        = task_suite.get_task(int(task_id))
         instruction = task.language
         print(f"[info] fast eval task {task_id} from suite {task_suite_name}: {instruction}")
-        init_states = task_suite.get_task_init_states(task_id)
 
+        init_states     = task_suite.get_task_init_states(int(task_id))
         episodes_to_run = min(cfg.sim.eval_episodes, len(init_states))
+
         for init_state_id in range(episodes_to_run):
             env.reset()
             env.set_init_state(init_states[init_state_id])
             obs, info = env.reset()
-            rewards = []
-            infos = []
-            poses_list = []
+
+            rewards      = []
+            infos        = []
+            poses_list   = []
             actions_list = []
-            obs_list = []
-            frames = []
-            last_action = np.zeros(cfg.action_dim)
-            done, truncated, timeLimit, t = False, False, cfg.sim.episode_length, 0
+            obs_list     = []
+            frames       = []
+            done = truncated = False
+            t    = 0
 
             if render:
-                first_frame = env.render()
-                if first_frame is not None:
-                    frames.append(first_frame)
+                frame = env.render()
+                if frame is not None:
+                    frames.append(frame)
 
-            while not (done or truncated or (t > timeLimit)):
-                state_obs = np.asarray(info.get('state_obs', obs), dtype=np.float32)
-                pose_tensor = model.encode_pose(torch.tensor(np.array([[state_obs]]), dtype=torch.float32).to(device))
+            with torch.no_grad():
+                while not (done or truncated or t >= cfg.sim.episode_length):
+                    # Privileged state obs — same input used during training
+                    state_obs = np.asarray(info["state_obs"], dtype=np.float32)
+                    obs_t     = torch.tensor(state_obs, dtype=torch.float32,
+                                             device=device).unsqueeze(0)   # (1, obs_dim)
 
-                out = model.forward(
-                    observations=None,
-                    text_goal=None,
-                    goal_image=None,
-                    mask_=True,
-                    pose=pose_tensor,
-                    prev_actions=None,
-                    last_action=last_action,
-                )
+                    # Single deterministic action from the policy
+                    action_np, _, _, _ = model.get_action(obs_t, deterministic=True)
 
-                decoded = model.decode_action(out['actions']).cpu().detach().numpy()
-                action_seq = _as_action_sequence(decoded, cfg)
-                if t == 0:
-                    print(f"action_seq shape: {action_seq.shape}")
-                assert action_seq.shape == (cfg.policy.action_stacking, cfg.action_dim), (
-                    f"Expected action_seq shape {(cfg.policy.action_stacking, cfg.action_dim)}, got {action_seq.shape}"
-                )
-                last_action = action_seq[-1].copy()
+                    poses_list.append(state_obs.copy())
+                    obs_list.append(state_obs.copy())
 
-                for act_ in action_seq:
-                    poses_list.append(np.array(state_obs, copy=True))
-                    obs_list.append(np.array(obs, copy=True))
-                    
-                    obs, reward, done, truncated, info = env.step(act_)
-                    state_obs = np.asarray(info.get('state_obs', obs), dtype=np.float32)
-                    actions_list.append(act_)
-                    rewards.append(reward)
+                    obs, reward, done, truncated, info = env.step(action_np)
+
+                    actions_list.append(action_np.copy())
+                    rewards.append(float(reward))
                     infos.append(info)
+
                     if render:
                         frame = env.render()
                         if frame is not None:
                             frames.append(frame)
                     t += 1
                     if done or truncated:
-                        successful_tasks += 1 if done else 0
                         break
 
+            success = float(info.get("success_placed", 0.0))
+            total_successes += int(success)
+            total_episodes  += 1
+
+            avg_ep_reward = float(np.mean(rewards)) if rewards else 0.0
+            ep_return     = float(sum(rewards))
+            print(f"  ep {init_state_id}: return={ep_return:.3f}  "
+                  f"avg_reward={avg_ep_reward:.4f}  success={success:.0f}")
+
             path_ = None
-            if render:
-                path_ = os.path.join(log_dir, f"libero-fast-{iter_}-task-id-{task_id}-init-id-{init_state_id}.mp4")
-                if len(frames) > 0:
-                    imageio.mimsave(path_, frames, fps=20)
-                    last_video_path = path_
+            if render and frames:
+                path_ = os.path.join(
+                    log_dir,
+                    f"libero-fast-{iter_}-task-id-{task_id}-init-id-{init_state_id}.mp4"
+                )
+                imageio.mimsave(path_, frames, fps=20)
+                last_video_path = path_
+
+            # ---- per-episode W&B logging ----
+            if not cfg.testing and wandb is not None:
+                ep_log = {
+                    "eval/episode":        total_episodes,
+                    "eval/task_id":        int(task_id),
+                    "eval/ep_return":      ep_return,
+                    "eval/avg_reward":     avg_ep_reward,
+                    "eval/success":        success,
+                    "eval/episode_length": t,
+                }
+                if path_ is not None:
+                    try:
+                        ep_log["eval/video"] = wandb.Video(path_, fps=20, format="mp4")
+                    except Exception as e:
+                        print(f"Warning: failed to attach episode video to wandb: {e}")
+                wandb.log(ep_log)
 
             trajectory_data.append({
-                'task_id': task_id,
-                'init_state_id': init_state_id,
-                'rewards': rewards,
-                'infos': infos,
-                'observations': obs_list,
-                'poses': poses_list,
-                'actions': actions_list,
-                'video_url': path_,
+                "task_id":       task_id,
+                "init_state_id": init_state_id,
+                "rewards":       rewards,
+                "infos":         infos,
+                "observations":  obs_list,
+                "poses":         poses_list,
+                "actions":       actions_list,
+                "success":       success,
+                "video_url":     path_,
             })
 
         env.close()
 
-    avg_reward = float(np.mean([np.mean(traj['rewards']) for traj in trajectory_data])) if trajectory_data else 0.0
-    episode_stats = {
-        'rewards': avg_reward,
-        'video_url': last_video_path,
-        'traj': trajectory_data,
-    }
-    print(f"avg reward {avg_reward:.8f}")
+    avg_reward   = float(np.mean([np.mean(traj["rewards"]) for traj in trajectory_data])) \
+                   if trajectory_data else 0.0
+    success_rate = float(total_successes / max(1, total_episodes))
 
-    if not cfg.testing and wandb is not None:
-        wandb.log({"avg reward_fast": avg_reward})
-        if last_video_path is not None and render:
-            try:
-                wandb.log({"example_fast": wandb.Video(last_video_path)})
-            except Exception as e:
-                print(f"Warning: failed to log fast eval video to wandb: {e}")
+    print(f"\n[eval summary]  avg_reward={avg_reward:.4f}  "
+          f"success_rate={success_rate:.2f}  ({total_successes}/{total_episodes})")
+
+    episode_stats = {
+        "rewards":      avg_reward,
+        "success_rate": success_rate,
+        "traj":         trajectory_data,
+        "video_url":    last_video_path,
+    }
+
+    # ---- summary W&B logging ----
+    # if not cfg.testing and wandb is not None:
+    #     wandb.log({
+    #         "eval/avg_reward_summary":   avg_reward,
+    #         "eval/success_rate_summary": success_rate,
+    #         "eval/total_episodes":       total_episodes,
+    #         "eval/total_successes":      total_successes,
+    #     })
+    #     # summary table: one row per episode
+    #     columns = ["task_id", "init_state_id", "ep_return", "success"]
+    #     rows    = [
+    #         [t["task_id"], t["init_state_id"],
+    #          float(sum(t["rewards"])), t["success"]]
+    #         for t in trajectory_data
+    #     ]
+    #     wandb.log({"eval/episode_table": wandb.Table(columns=columns, data=rows)})
 
     return episode_stats
 
 import hydra
-from omegaconf import DictConfig
+import os
+from omegaconf import DictConfig, OmegaConf
 
-@hydra.main(config_path="./conf", config_name="64pix-pose")
+
+# ---------------------------------------------------------------------------
+# Transformer policy eval loop  (image obs → TransformerPolicyWrapper)
+# ---------------------------------------------------------------------------
+
+def eval_libero_fast_transformer(model, device, cfg, iter_=0, log_dir="./",
+                                 wandb=None, render=False):
+    """Evaluate a TransformerPolicyWrapper on FastLIBEROEnv.
+
+    Uses the image observation returned by FastLIBEROEnv (when
+    ``fast_env_output_image=True``) together with the language instruction and
+    an optional pose token, matching the API used in ``train_transformer_rl.py``.
+
+    Args:
+        model:   TransformerPolicyWrapper instance (on ``device``, eval mode).
+        device:  torch.device.
+        cfg:     Hydra DictConfig.  Uses ``sim.*`` keys.
+        iter_:   Iteration index used for video file naming.
+        log_dir: Directory to save mp4 videos.
+        render:  Whether to save a video per episode.
+        wandb:   Optional wandb run handle.
+
+    Returns:
+        dict with keys: rewards, success_rate, traj, video_url.
+    """
+    from libero.libero import benchmark
+    from libero_env_fast import FastLIBEROEnv
+    from train_transformer_rl import _extract_pose_from_info
+    import imageio
+
+    benchmark_dict  = benchmark.get_benchmark_dict()
+    task_suite_name = cfg.sim.task_set
+    task_suite      = benchmark_dict[task_suite_name]()
+
+    use_pose        = model.model._cfg.policy.use_pose_data
+
+    trajectory_data = []
+    last_video_path = None
+    total_successes = 0
+    total_episodes  = 0
+
+    for task_id in cfg.sim.eval_tasks:
+        # FastLIBEROEnv must output images for the transformer
+        env = FastLIBEROEnv(
+            benchmark_name=task_suite_name,
+            task_id=int(task_id),
+            max_episode_steps=cfg.sim.episode_length,
+            render_mode="rgb_array" if render else None,
+            cfg=OmegaConf.merge(cfg, OmegaConf.create({
+                "sim": {
+                    "fast_env_output_image": True,
+                    "fast_env_image_size": int(cfg.transformer_policy.fast_env_image_size),
+                }
+            })),
+        )
+        task        = task_suite.get_task(int(task_id))
+        instruction = task.language
+        print(f"[info] transformer eval task {task_id} | {task_suite_name}: {instruction}")
+
+        init_states     = task_suite.get_task_init_states(int(task_id))
+        episodes_to_run = min(cfg.sim.eval_episodes, len(init_states))
+
+        for init_state_id in range(episodes_to_run):
+            env.reset()
+            env.set_init_state(init_states[init_state_id])
+            obs, info = env.reset()
+            obs = np.ascontiguousarray(obs)   # (H, W, C) uint8
+
+            # Encode goal once per episode
+            txt_goal, goal_state = model.encode_goals(obs, instruction)
+            pose = _extract_pose_from_info(info, model, device) if use_pose else None
+
+            rewards      = []
+            infos        = []
+            actions_list = []
+            obs_list     = []
+            frames       = []
+            done = truncated = False
+            t    = 0
+
+            if render:
+                frame = env.render()
+                if frame is not None:
+                    frames.append(frame)
+
+            with torch.no_grad():
+                while not (done or truncated or t >= cfg.sim.episode_length):
+                    obs_t = torch.from_numpy(obs).float().to(device).unsqueeze(0)  # (1,H,W,C)
+
+                    action_np, _, _, _ = model.get_action(
+                        obs_t, txt_goal, goal_state, pose, deterministic=True
+                    )
+
+                    obs_list.append(obs.copy())
+                    obs, reward, done, truncated, info = env.step(action_np)
+                    obs = np.ascontiguousarray(obs)
+
+                    pose = _extract_pose_from_info(info, model, device) if use_pose else None
+
+                    actions_list.append(action_np.copy())
+                    rewards.append(float(reward))
+                    infos.append(info)
+
+                    if render:
+                        frame = env.render()
+                        if frame is not None:
+                            frames.append(frame)
+                    t += 1
+                    if done or truncated:
+                        break
+
+            success = float(info.get("success_placed", 0.0))
+            total_successes += int(success)
+            total_episodes  += 1
+
+            avg_ep_reward = float(np.mean(rewards)) if rewards else 0.0
+            ep_return     = float(sum(rewards))
+            print(f"  ep {init_state_id}: return={ep_return:.3f}  "
+                  f"avg_reward={avg_ep_reward:.4f}  success={success:.0f}")
+
+            path_ = None
+            if render and frames:
+                path_ = os.path.join(
+                    log_dir,
+                    f"libero-fast-transformer-{iter_}-task-id-{task_id}-init-id-{init_state_id}.mp4"
+                )
+                imageio.mimsave(path_, frames, fps=20)
+                last_video_path = path_
+
+            # ---- per-episode W&B logging ----
+            if not cfg.testing and wandb is not None:
+                ep_log = {
+                    "eval/episode":        total_episodes,
+                    "eval/task_id":        int(task_id),
+                    "eval/ep_return":      ep_return,
+                    "eval/avg_reward":     avg_ep_reward,
+                    "eval/success":        success,
+                    "eval/episode_length": t,
+                }
+                if path_ is not None:
+                    try:
+                        ep_log["eval/video"] = wandb.Video(path_, fps=20, format="mp4")
+                    except Exception as e:
+                        print(f"Warning: failed to attach episode video to wandb: {e}")
+                wandb.log(ep_log)
+
+            trajectory_data.append({
+                "task_id":       task_id,
+                "init_state_id": init_state_id,
+                "rewards":       rewards,
+                "infos":         infos,
+                "observations":  obs_list,
+                "actions":       actions_list,
+                "success":       success,
+                "video_url":     path_,
+            })
+
+        env.close()
+
+    avg_reward   = float(np.mean([np.mean(traj["rewards"]) for traj in trajectory_data])) \
+                   if trajectory_data else 0.0
+    success_rate = float(total_successes / max(1, total_episodes))
+
+    print(f"\n[eval summary]  avg_reward={avg_reward:.4f}  "
+          f"success_rate={success_rate:.2f}  ({total_successes}/{total_episodes})")
+
+    episode_stats = {
+        "rewards":      avg_reward,
+        "success_rate": success_rate,
+        "traj":         trajectory_data,
+        "video_url":    last_video_path,
+    }
+
+    # ---- summary W&B logging ----
+    if not cfg.testing and wandb is not None:
+        wandb.log({
+            "eval/avg_reward_summary":   avg_reward,
+            "eval/success_rate_summary": success_rate,
+            "eval/total_episodes":       total_episodes,
+            "eval/total_successes":      total_successes,
+        })
+        columns = ["task_id", "init_state_id", "ep_return", "success"]
+        rows    = [
+            [t["task_id"], t["init_state_id"],
+             float(sum(t["rewards"])), t["success"]]
+            for t in trajectory_data
+        ]
+        wandb.log({"eval/episode_table": wandb.Table(columns=columns, data=rows)})
+
+    return episode_stats
+
+
+# ---------------------------------------------------------------------------
+# Entry point — dispatches to the correct model loader and eval loop
+# ---------------------------------------------------------------------------
+
+@hydra.main(config_path="conf", config_name="sim_eval", version_base=None)
 def my_main(cfg: DictConfig):
-    import torch
-    # ------------
-    # Train and test splits
-    # Loading data
-    # create RLDS dataset builder
+    import wandb as wandb_lib
+    from omegaconf import OmegaConf
+    print(OmegaConf.to_yaml(cfg))
+
     log_dir = hydra.core.hydra_config.HydraConfig.get().runtime.output_dir
-    cfg.dataset.load_dataset = "skip"
-    # model = GRP(cfg)
-    # model_ = torch.load("/home/gberseth/playground/mini_grp/miniGRP.pth")
-    model_dir = hydra.utils.get_original_cwd()+"/mini-grp/miniGRP.pth"
-    print ("Loading model from:", model_dir)
-    if "dataset" == cfg.model.type:
-        ## load the dataset
-        cfg.dataset.load_dataset = True
-        model_ = ReplayModel(cfg)
-        dataset_buffer = CircularBuffer(cfg.dataset.buffer_size, cfg, model=model_)
-        model_.set_dataset(dataset_buffer)
+    device  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    checkpoint_path = hydra.utils.to_absolute_path(cfg.checkpoint)
+    model_type      = str(cfg.model_type).lower()
+
+    print(f"[sim_eval] model_type={model_type}  checkpoint={checkpoint_path}")
+
+    # ------------------------------------------------------------------ #
+    # 0. Init W&B (skipped in dry-run / testing mode)                     #
+    # ------------------------------------------------------------------ #
+    run = None
+    if not cfg.testing:
+        run = wandb_lib.init(
+            project=cfg.experiment.project,
+            name=cfg.experiment.name,
+            config=OmegaConf.to_container(cfg, resolve=True),
+            tags=[model_type, cfg.sim.task_set],
+        )
+        print(f"[wandb] run initialised: {run.name}  url: {run.url}")
+
+    # ------------------------------------------------------------------ #
+    # 1. Load model                                                        #
+    # ------------------------------------------------------------------ #
+    if model_type == "dense_policy":
+        from train_dense_rl import DensePolicy
+        ckpt       = torch.load(checkpoint_path, map_location=device)
+        obs_dim    = int(cfg.dense_policy.obs_dim)
+        action_dim = int(cfg.dense_policy.action_dim)
+        hidden_dim = int(cfg.dense_policy.hidden_dim)
+        n_layers   = int(cfg.dense_policy.n_layers)
+        policy = DensePolicy(obs_dim, action_dim, hidden_dim, n_layers).to(device)
+        policy.load_state_dict(ckpt["policy"])
+        policy.eval()
+        print(f"Loaded DensePolicy  obs_dim={obs_dim}  action_dim={action_dim}")
+
+    elif model_type == "transformer_policy":
+        from train_transformer_rl import TransformerPolicyWrapper
+        policy = TransformerPolicyWrapper(checkpoint_path, device, cfg)
+        policy.eval()
+        print(f"Loaded TransformerPolicyWrapper from {checkpoint_path}")
+
     else:
-        from grp_model import GRP
-        model_ = torch.load(model_dir, pickle_module=dill)
-    # model_._cgf = cfg
+        raise ValueError(
+            f"Unknown model_type='{model_type}'. "
+            "Choose 'dense_policy' or 'transformer_policy'."
+        )
 
-    tokenizer = None
-    text_model = None
-    if cfg.dataset.encode_with_t5: ## Load T5 model
-        from transformers import T5Tokenizer, T5ForConditionalGeneration
-        tokenizer = T5Tokenizer.from_pretrained(cfg.dataset.t5_version)
-        text_model = T5ForConditionalGeneration.from_pretrained(cfg.dataset.t5_version)
-    
-    if "libero" in cfg.simEval:
-        results = eval_libero(model_.to(cfg.device), device=cfg.device, cfg=cfg,
-                          iter_=0, tokenizer=tokenizer, text_model=text_model, wandb=None,
-                          log_dir=log_dir)
-    if "libero_fast" in cfg.simEval:
-        results = eval_libero_fast(model_.to(cfg.device), device=cfg.device, cfg=cfg,
-                      iter_=0, tokenizer=tokenizer, text_model=text_model, wandb=None,
-                      log_dir=log_dir)
-    if "simple_env" in cfg.simEval:
-        import simpler_env
-        task_name = "widowx_carrot_on_plate"  # @param ["google_robot_pick_coke_can", "google_robot_move_near", "google_robot_open_drawer", "google_robot_close_drawer", "widowx_spoon_on_towel", "widowx_carrot_on_plate", "widowx_stack_cube", "widowx_put_eggplant_in_basket"]
-        if 'env' in locals():
-            print("Closing existing env")
-            env.close()
-            del env
-        env = simpler_env.make(task_name)
-        env_unwrapped = env.env.env.env ## Updated gymnasium wrapper adds lots of wrappers.
-        results = eval_model_in_sim(cfg, model_.to(cfg.device), device=cfg.device, log_dir=log_dir,
-                                env=env, env_unwrapped=env_unwrapped,
-                                wandb=None, iter_=0, tokenizer=tokenizer, text_model=text_model)
-        print("results:", results)
+    # ------------------------------------------------------------------ #
+    # 2. Run evaluators                                                    #
+    # ------------------------------------------------------------------ #
+    all_results = {}
 
-    # cbuffer.save(cfg.dataset.to_name)
+    try:
+        if "libero_fast" in cfg.simEval:
+            if model_type == "dense_policy":
+                results = eval_libero_fast(
+                    policy, device, cfg,
+                    iter_=0, log_dir=log_dir, render=True,
+                    wandb=wandb_lib if run is not None else None,
+                )
+            else:  # transformer_policy
+                results = eval_libero_fast_transformer(
+                    policy, device, cfg,
+                    iter_=0, log_dir=log_dir, render=True,
+                    wandb=wandb_lib if run is not None else None,
+                )
+            print(f"[libero_fast]  avg_reward={results['rewards']:.4f}  "
+                  f"success_rate={results['success_rate']:.2f}")
+            all_results["libero_fast"] = results
+
+        if "libero" in cfg.simEval and "libero_fast" not in cfg.simEval:
+            if model_type != "transformer_policy":
+                raise NotImplementedError(
+                    "The 'libero' evaluator uses the GRP model API and requires "
+                    "model_type=transformer_policy.  Use simEval=[libero_fast] for "
+                    "dense_policy evaluation."
+                )
+            results = eval_libero(
+                policy, device, cfg,
+                iter_=0, log_dir=log_dir, render=True,
+            )
+            print(f"[libero]  avg_reward={results['rewards']:.4f}")
+            all_results["libero"] = results
+
+    finally:
+        if run is not None:
+            run.finish()
+
+    return all_results
 
 
 if __name__ == "__main__":

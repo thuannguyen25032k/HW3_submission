@@ -1,0 +1,66 @@
+# ============================================================
+# sim_eval.yaml — unified evaluation config for sim_eval.py
+#
+# Supports two model types:
+#   model_type: dense_policy        → DensePolicy (MLP, state obs)
+#   model_type: transformer_policy  → TransformerPolicyWrapper (GRP, image obs)
+#
+# Example commands
+# ----------------
+# Dense policy:
+#   python sim_eval.py \
+#       checkpoint=checkpoints/hw3_dense_ppo_seed2/dense_ppo_final.pth \
+#       model_type=dense_policy \
+#       simEval=[libero_fast] \
+#       testing=true \
+#       sim.eval_tasks=[9]
+#
+# Transformer policy:
+#   python sim_eval.py \
+#       checkpoint=checkpoints/hw3_transformer_ppo_seed0/transformer_final.pth \
+#       model_type=transformer_policy \
+#       simEval=[libero_fast] \
+#       testing=true \
+#       sim.eval_tasks=[9]
+# ============================================================
+
+# ---------- which checkpoint and model type to evaluate ----------
+checkpoint: ???              # required: path to the .pth checkpoint to evaluate
+model_type: dense_policy     # "dense_policy" | "transformer_policy"
+
+# ---------- general ----------
+experiment:
+  name: sim_eval
+  project: mini-grp-hw3
+
+r_seed: 0
+testing: false               # true → skip wandb logging (dry-run / CI mode)
+
+simEval: [libero_fast]       # evaluators to run: [libero_fast] | [libero] | [libero_fast, libero]
+
+# ---------- simulation ----------
+sim:
+  task_set: "libero_spatial"
+  eval_tasks: [9]
+  eval_episodes: 10
+  episode_length: 300
+  use_fast_env: true
+  fast_env_output_image: false  # overridden per model_type in my_main
+
+# ---------- dense_policy settings ----------
+# Used when model_type=dense_policy.
+dense_policy:
+  obs_dim: 13                # FastLIBEROEnv privileged state: 7 proprio + 6 rel obj pos
+  action_dim: 7
+  hidden_dim: 256
+  n_layers: 3
+
+# ---------- transformer_policy settings ----------
+# Used when model_type=transformer_policy.
+# The transformer checkpoint is a dill-pickled GRP model (miniGRP.pth style);
+# the model carries its own internal config so only a few env-interface params
+# are needed here.
+transformer_policy:
+  fast_env_image_size: 64    # image size fed to FastLIBEROEnv; must match the
+                             # image_shape baked into the checkpoint config
+  use_pose: true             # whether to feed pose token to the transformer

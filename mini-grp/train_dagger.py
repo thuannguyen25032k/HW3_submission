@@ -15,8 +15,15 @@ Usage:
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../mini-grp'))
-
+from pathlib import Path
+os.environ["MUJOCO_GL"] = "egl"
+# Ensure the vendored LIBERO package is importable even if it hasn't been pip-installed.
+# Hydra may change the working directory, so we resolve relative to this file.
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+_LIBERO_ROOT = _REPO_ROOT / "LIBERO"
+if _LIBERO_ROOT.exists():
+    sys.path.insert(0, str(_LIBERO_ROOT))
+    
 import numpy as np
 import torch
 import torch.nn as nn
@@ -398,4 +405,6 @@ def main(cfg: DictConfig):
 
 
 if __name__ == "__main__":
+    # Run the hydra-decorated main. Hydra will handle working directory and
+    # configuration composition from the `conf/` folder.
     main()

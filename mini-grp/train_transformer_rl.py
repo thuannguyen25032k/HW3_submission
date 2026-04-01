@@ -188,7 +188,7 @@ class TransformerPolicyWrapper(nn.Module):
         self._action_log_std = nn.Parameter(torch.zeros(
             action_out_features, device=device
         ))
-        nn.init.constant_(self._action_log_std, -0.5)  # std ~ 0.45 at start of RL
+        nn.init.constant_(self._action_log_std, 0)  # std ~ 0.45 at start of RL
         # Cache decode_action tensors on device so forward() never rebuilds them.
         self.register_buffer(
             "_action_mean",
@@ -265,7 +265,7 @@ class TransformerPolicyWrapper(nn.Module):
         # Keep the distribution in that space — tanh squashing is done in
         # get_action(), so the pretrained mean is faithfully preserved at
         # the start of RL fine-tuning and the log-prob is self-consistent.
-        log_std    = self._action_log_std.clamp(-5.0, 0.0)   # cap std at exp(0)=1.0 to prevent entropy explosion
+        log_std    = self._action_log_std.clamp(-5.0, 1.0)   # cap std at exp(0)=1.0 to prevent entropy explosion
         action_std = log_std.exp().expand_as(raw_logits)
         return Normal(raw_logits, action_std)
 
@@ -948,7 +948,9 @@ def evaluate_policy(
     max_ep_steps  = int(cfg.sim.episode_length)
     video_fps     = int(getattr(cfg.sim, "video_fps", 20))
     cam_name      = str(getattr(cfg.sim, "fast_env_image_camera", "agentview"))
-    render_size   = int(getattr(cfg.sim, "fast_env_image_size", 256))
+    # Use a dedicated video render size (default 256) that is independent of
+    # fast_env_image_size, which is the low-res observation fed to the policy.
+    render_size   = int(getattr(cfg.sim, "video_render_size", 256))
 
     ep_returns    : list[float]             = []
     ep_lengths    : list[int]               = []

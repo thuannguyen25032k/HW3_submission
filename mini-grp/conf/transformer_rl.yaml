@@ -1,0 +1,90 @@
+experiment:
+  name: hw3_transformer_ppo
+  project: mini-grp-hw3
+  description: "Transformer policy fine-tuned from HW1 checkpoint with RL"
+
+r_seed: 1337
+
+init_checkpoint: ???         # required: path to HW1 miniGRP.pth checkpoint
+
+rl:
+  algorithm: ppo             # "ppo" or "grpo"
+
+sim:
+  task_set: "libero_spatial"
+  eval_tasks: [9]
+  eval_episodes: 5
+  episode_length: 200
+  use_fast_env: true
+  fast_env_output_image: true
+  reward_scale: 0.1
+
+training:
+  total_env_steps: 200000
+  rollout_length: 2048       # steps collected per update
+  ppo_epochs: 10
+  minibatch_size: 256         # smaller for transformer memory
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_eps: 0.1           # 0 = no clipping (equivalent to TRPO-style KL penalty); 0.1 = tighter clipping for fine-tuning
+  value_coeff: 0.5
+  entropy_coeff: 0.001             # disable entropy bonus: pretrained policy already has
+                             # good representations — a non-zero entropy term pushes log_std
+                             # upward and causes the distribution to widen/collapse
+  max_grad_norm: 0.5
+  learning_rate: 3e-5        # smaller LR for fine-tuning
+  normalize_advantages: true
+  normalize_rewards: false
+  anneal_lr: true
+  target_kl: 0.01            # early-stop PPO epochs when mean KL exceeds this threshold;
+                             # 0.01 is the standard CleanRL/OpenAI value; conservative for
+                             # fine-tuning a pretrained transformer (protects HW1 representations)
+  value_clip_eps: 50.0       # must cover the full range of value targets; episode returns
+                             # are ~200 (reward_scale=0.1 × raw ~2000), so 10.0 throttles
+                             # the critic too aggressively — set to 50.0 to let it fit
+
+grpo:
+  group_size: 8              # number of trajectories per initial state (real-env GRPO)
+  num_groups: 16              # number of initial states per update (real-env GRPO)
+  kl_coef: 0.04             # β: weight on KL(π_θ ‖ π_ref) penalty (GRPO paper default)
+  ref_update_interval: 0    # outer-iteration interval to refresh π_ref (iterative GRPO).
+                             # 0 = never refresh (π_ref stays as BC init, single-iteration GRPO).
+                             # e.g. 50 = re-snapshot π_ref every 50 gradient updates (Algorithm 1, line 3).
+  chunk_size: 32             # max timesteps per forward-backward chunk to bound peak VRAM usage;
+                             # reduce to 16 if OOM persists, increase to 64 if GPU memory allows
+  # ---- world-model GRPO (grpo_worldmodel algorithm) ----
+  wm_horizon: 15             # max imagination steps per trajectory
+  wm_update_every: 4         # run a world-model GRPO update every N real env steps
+
+# World model configuration (used only when rl.algorithm=grpo_worldmodel)
+world_model:
+  checkpoint: ???            # required: path to DreamerV3 state-dict (.pth)
+  type: dreamer              # model type string passed to create_model(); 'dreamer' only
+  obs_shape: [3, 64, 64]    # (C, H, W) — must match the checkpoint
+  action_dim: 7
+  stoch_dim: 32
+  discrete_dim: 32
+  deter_dim: 512
+  hidden_dim: 512
+
+value:
+  # transformer architecture
+  n_embd: 128            # embedding dimension (smaller than policy to save VRAM)
+  n_head: 4              # attention heads (must divide n_embd)
+  n_blocks: 4            # number of transformer blocks
+  dropout: 0.1
+  # value head
+  hidden_dim: 256        # hidden size of the Linear→Tanh→Linear value head
+  # input layout — must match the policy checkpoint's image/patch settings
+  patch_size: 8          # pixels per patch side (= image_size / n_patches)
+  n_patches: 8           # patches per image side
+  obs_stacking: 1        # history frames stacked in the channel dim
+  image_shape: [64, 64, 3]  # [H, W, C] of the obs/goal images
+  max_block_size: 32     # text token budget
+  use_pose: true         # include pose token in the sequence
+  # optimiser
+  learning_rate: 3e-4
+
+eval_interval: 5000
+log_interval: 1000
+save_interval: 50000

@@ -354,8 +354,9 @@ def ppo_update(policy: DensePolicy,
     clip_fracs = []
 
     for _epoch in range(int(cfg.training.ppo_epochs)):
-        epoch_kls = [] # Track KLs for this specific epoch
+        epoch_kls = []  # Track KLs for this specific epoch
         perm = torch.randperm(n, device=obs.device)
+        _early_stop = False
         for start in range(0, n, mb):
             idx = perm[start:start + mb]
 
@@ -453,12 +454,24 @@ def ppo_update(policy: DensePolicy,
             entropies.append(entropy.detach())
             approx_kls.append(approx_kl.detach())
             clip_fracs.append(clipped.detach())
-        # --- Check for Early Stopping after the epoch's minibatches ---
-        if target_kl > 0.0:  # Only check if target_kl is set to a positive value
+
+            # Per-minibatch early stopping: stop as soon as any minibatch KL
+            # exceeds 1.5 × target_kl — prevents the policy from drifting far
+            # before we finish the epoch (clip_frac=0.82 was the symptom).
+            if target_kl > 0.0 and approx_kl.item() > 1.5 * target_kl:
+                print(f"  [early-stop] epoch {_epoch}, mb {start}: "
+                      f"approx_kl={approx_kl.item():.4f} > {1.5*target_kl:.4f}, stopping.")
+                _early_stop = True
+                break
+
+        # --- Check for Early Stopping after each epoch ---
+        if target_kl > 0.0:
             avg_epoch_kl = np.mean(epoch_kls)
             if avg_epoch_kl > target_kl:
                 print(f"Early stopping at epoch {_epoch} due to reaching target KL: {avg_epoch_kl:.4f} > {target_kl}")
                 break
+        if _early_stop:
+            break
 
     def _mean(xs):
         if not xs:

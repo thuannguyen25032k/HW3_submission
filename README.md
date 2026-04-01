@@ -9,7 +9,8 @@ HW3_submission/
 │   ├── hw3_dense_ppo_seed1/       # Part 1 — Dense PPO seed 1
 │   ├── hw3_dense_ppo_seed2/       # Part 1 — Dense PPO seed 2
 │   ├── hw3_transformer_grpo/      # Part 2c — Transformer GRPO (ground-truth resets)
-│   └── hw3_transformer_ppo/       # Part 2a — Transformer PPO (placeholder)
+│   ├── hw3_transformer_ppo/       # Part 2a — Transformer PPO (placeholder)
+│   └── hw3_dagger_seed0/          # Part 3 — DAgger distillation
 └── mini-grp/                      # All training and evaluation scripts
     ├── train_dense_rl.py
     ├── train_transformer_rl.py
@@ -194,20 +195,125 @@ and contain: `policy`, `optimizer`, `total_steps`, `cfg`.
 
 ---
 
-## Standalone Evaluation
+## Part 3 — DAgger (LIBERO-Spatial task 9)
 
-`sim_eval.py` accepts any checkpoint in HW1-style raw pickle format **or** an HW3 dict with a `policy` key.
+The transformer student is initialised from the HW1 GRP checkpoint and distilled from the best Part 1 dense PPO teacher (`hw3_dense_ppo_seed2`) on **LIBERO-Spatial task 9** using DAgger.
+
+### Reproduce
 
 ```bash
-# HW1-style raw pickle
-python sim_eval.py \
-    simEval=[libero_fast] \
-    sim.eval_tasks=[9]
-
-# HW3-style PPO/GRPO checkpoint
-python sim_eval.py \
-    checkpoint=/path/to/transformer_grpo_200000.pth \
-    simEval=[libero_fast] \
-    sim.eval_tasks=[0]
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+mkdir -p logs
+python train_dagger.py \
+    experiment.name=hw3_dagger_seed0 \
+    r_seed=0 \
+    teacher_checkpoint="checkpoints/hw3_dense_ppo_seed2/dense_ppo_final.pth" \
+    student_init_checkpoint="checkpoints/grp-ver2/miniGRP.pth" \
+    sim.task_set=libero_spatial \
+    sim.eval_tasks=[9] \
+    sim.episode_length=300 \
+    dagger.num_rounds=120 \
+    dagger.rollouts_per_round=120 \
+    dagger.bc_epochs_per_round=80 \
+    dagger.beta_schedule=linear \
+    dagger.beta_init=1.0 \
+    dagger.dataset_save_dir="dagger_datasets/seed0" \
+    training.learning_rate=1e-4 \
+    training.minibatch_size=64 \
+    training.max_grad_norm=0.5 \
+    eval_interval=1 \
+    save_interval=5
 ```
+
+### Key hyperparameters (Part 3)
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| `sim.fast_env_image_size` | `64` | Image obs size fed to the student (must match checkpoint config) |
+| `sim.video_render_size` | `256` | Resolution for evaluation video rendering (independent of obs size) |
+| `dagger.num_rounds` | `120` | DAgger iterations |
+| `dagger.rollouts_per_round` | `120` | Rollouts collected per round |
+| `dagger.bc_epochs_per_round` | `80` | Supervised BC epochs over aggregated dataset per round |
+| `dagger.beta_schedule` | `linear` | Beta decays from `1.0` (pure teacher) → `0.0` (pure student) |
+| `dagger.beta_init` | `1.0` | Initial teacher mixing coefficient |
+| `training.learning_rate` | `1e-4` | Adam LR for BC updates |
+| `training.minibatch_size` | `64` | Mini-batch size for BC |
+| `training.max_grad_norm` | `0.5` | Gradient clipping |
+
+### Seed table
+
+| Experiment name | `r_seed` |
+|-----------------|----------|
+| `hw3_dagger_seed0` | 0 |
+
+### Checkpoint format
+
+The final student checkpoint is saved to `<hydra_output_dir>/checkpoints/dagger_student_final.pth`  
+and contains: `student`, `cfg`.
+
+Intermediate checkpoints are saved every 5 rounds as `dagger_student_round<NNN>.pth`.
+
+---
+
+## Standalone Evaluation (`sim_eval.py`)
+
+`sim_eval.py` evaluates any saved checkpoint via the unified `conf/sim_eval.yaml` config.
+Set `model_type` to match the checkpoint:
+
+| `model_type` | Checkpoint format | Parts |
+|---|---|---|
+| `dense_policy` | HW3 dict with `policy` key | Part 1 |
+| `transformer_policy` | Raw dill-pickled GRP model (HW1 format) | Parts 2 & 3 init |
+
+> **Note:** `TransformerPolicyWrapper` expects the raw HW1 dill pickle, **not** an HW3 state-dict dict.
+> DAgger and PPO fine-tuned transformer checkpoints use the HW3 dict format and are best evaluated
+> via the built-in `evaluate_policy` in `train_transformer_rl.py`.
+
+### Dense policy (Part 1)
+
+```bash
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+python sim_eval.py \
+    experiment.name=hw3_dense_ppo_seed0_evaluation \
+    checkpoint=checkpoints/hw3_dense_ppo_seed0/dense_ppo_final.pth \
+    model_type=dense_policy \
+    simEval=[libero_fast] \
+    sim.eval_episodes=20 \
+    sim.eval_tasks=[9] \
+    testing=false
+```
+
+### Transformer policy — HW1-format pickle (Parts 2 & 3 init)
+
+```bash
+export MUJOCO_GL=egl
+export PYOPENGL_PLATFORM=egl
+python sim_eval.py \
+    experiment.name=hw3_transformer_grpo_evaluation \
+    checkpoint=checkpoints/grp-ver2/miniGRP.pth \
+    model_type=transformer_policy \
+    simEval=[libero_fast] \
+    sim.eval_episodes=20 \
+    sim.eval_tasks=[0] \
+    testing=false
+```
+
+Add `testing=true` to skip W&B logging (dry-run / CI mode).
+
+### Key `conf/sim_eval.yaml` parameters
+
+| Parameter | Default | Notes |
+|-----------|---------|-------|
+| `model_type` | `dense_policy` | `"dense_policy"` \| `"transformer_policy"` |
+| `simEval` | `[libero_fast]` | Evaluators; `libero` requires `model_type=transformer_policy` |
+| `sim.eval_episodes` | `10` | Number of evaluation episodes |
+| `sim.eval_tasks` | `[9]` | LIBERO-Spatial task IDs |
+| `sim.episode_length` | `300` | Max steps per episode |
+| `testing` | `false` | `true` = skip W&B logging |
+| `dense_policy.obs_dim` | `13` | 7 proprio + 6 relative object pose |
+| `transformer_policy.fast_env_image_size` | `64` | Must match the checkpoint's baked-in image shape |
+| `transformer_policy.use_pose` | `true` | Whether to feed the pose token to the transformer |
 
